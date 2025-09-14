@@ -1,3 +1,4 @@
+// file: firebaseAdmin.ts
 import * as admin from 'firebase-admin';
 
 if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
@@ -24,6 +25,9 @@ if (!admin.apps.length) {
   });
 }
 
+// ✅ Export reusable auth instance and token verifier
+export const auth = admin.auth();
+
 export const verifyIdToken = async (token: string) => {
-  return admin.auth().verifyIdToken(token);
+  return auth.verifyIdToken(token);
 };
