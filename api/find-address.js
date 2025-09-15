@@ -1,53 +1,63 @@
-// Vercel Serverless Function to act as an API endpoint for postcode address lookup.
+// Vercel Serverless Function: Robust Postcode Address Lookup via Postcodes.io
 
 export default async function handler(req, res) {
   try {
-    // 1. Extract the postcode from the query string.
+    // 1. Extract and validate postcode from query
     const { postcode } = req.query;
 
-    // 2. Validate that a postcode was provided.
-    if (!postcode) {
-      return res.status(400).json({ error: 'Postcode is required' });
+    if (!postcode || typeof postcode !== 'string' || postcode.trim().length === 0) {
+      return res.status(400).json({ error: 'A valid postcode is required' });
     }
 
-    // 3. Fetch data from the Postcodes.io API.
-    const response = await fetch(`https://api.postcodes.io/postcodes/${postcode}`);
+    const trimmedPostcode = postcode.trim();
 
-    // Check if the response is ok before parsing
+    // 2. Fetch data from Postcodes.io API
+    const response = await fetch(`https://api.postcodes.io/postcodes/${trimmedPostcode}`);
+
     if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      console.error(`Postcodes.io responded with status ${response.status} for postcode: ${trimmedPostcode}`);
+      return res.status(502).json({ error: 'Upstream postcode service failed.' });
     }
 
     const data = await response.json();
 
-    // 4. Handle errors from the Postcodes.io API.
-    if (data.status !== 200) {
-      throw new Error(data.error || 'Invalid postcode');
+    // 3. Validate API response structure
+    if (data.status !== 200 || !data.result) {
+      const errorMessage = data.error || 'Invalid postcode or missing result';
+      console.error(`Postcode lookup failed: ${errorMessage} for postcode: ${trimmedPostcode}`);
+      return res.status(data.status || 500).json({ error: errorMessage });
     }
 
-    // 5. Extract addresses from the API response.
-    const addresses = data.result?.addresses || []; // Access addresses safely
+    // 4. Extract and validate address array
+    const rawAddresses = Array.isArray(data.result.addresses) ? data.result.addresses : [];
 
-    // Check if addresses were found
-    if (addresses.length === 0) {
-        return res.status(404).json({ error: 'No addresses found for this postcode.' });
+    if (rawAddresses.length === 0) {
+      return res.status(404).json({ error: 'No addresses found for this postcode.' });
     }
 
-    // Format the addresses (adjust based on the actual API response structure)
-    const formattedAddresses = addresses.map((address, index) => ({
-        id: String(index + 1), // Generate a unique ID
-        line1: address.line_1 || `Address Line 1, ${postcode}`, // Use actual address data if available
-        line2: address.line_2 || null, // Example of handling optional fields
-        town: address.town || null,
-        postcode: address.postcode || postcode
-    }));
+    // 5. Format each address safely
+    const formatAddress = (address, index, fallbackPostcode) => ({
+      id: String(index + 1),
+      line1: address?.line_1 || `Address Line 1, ${fallbackPostcode}`,
+      line2: address?.line_2 || null,
+      town: address?.town || null,
+      postcode: address?.postcode || fallbackPostcode
+    });
 
-    // 6. Send the list of formatted addresses back to the client.
-    res.status(200).json(formattedAddresses);
+    const formattedAddresses = rawAddresses
+      .filter((addr) => typeof addr === 'object' && addr !== null)
+      .map((address, index) => formatAddress(address, index, trimmedPostcode));
+
+    // 6. Optional: CORS header for cross-origin requests
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // 7. Return formatted addresses
+    return res.status(200).json(formattedAddresses);
 
   } catch (error) {
-    // 7. Handle any errors that occur during the process.
     console.error('Postcode lookup failed:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch addresses.' }); // Include error message
+    return res.status(500).json({
+      error: (error instanceof Error ? error.message : 'Failed to fetch addresses.')
+    });
   }
 }
