@@ -1,21 +1,31 @@
-// file: firebaseAdmin.ts
 import * as admin from 'firebase-admin';
 
-if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+
+if (!rawKey) {
   throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY is not set.');
 }
 
-let serviceAccount: admin.ServiceAccount;
+let serviceAccount;
+
 try {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  const parsed = JSON.parse(raw);
+  const parsed = JSON.parse(rawKey);
 
-  // 🔥 Fix the PEM format by replacing escaped newlines with real ones
-  parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+  if (!parsed.private_key || typeof parsed.private_key !== 'string') {
+    throw new Error('Missing or invalid private_key in service account.');
+  }
 
-  serviceAccount = parsed;
+  const sanitizedKey = {
+    ...parsed,
+    private_key: parsed.private_key.replace(/\\n/g, '\n'),
+  };
+
+  serviceAccount = sanitizedKey;
 } catch (error) {
-  console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', error);
+  console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', {
+    message: (error as Error).message,
+    stack: (error as Error).stack,
+  });
   throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_KEY format.');
 }
 
@@ -23,11 +33,18 @@ if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
   });
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('✅ Firebase Admin initialized');
+  }
 }
 
-// ✅ Export reusable auth instance and token verifier
 export const auth = admin.auth();
 
 export const verifyIdToken = async (token: string) => {
+  if (!token || typeof token !== 'string') {
+    throw new Error('Invalid token provided to verifyIdToken.');
+  }
+
   return auth.verifyIdToken(token);
 };

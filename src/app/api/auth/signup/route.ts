@@ -1,3 +1,5 @@
+// src/app/api/auth/signup/route.ts
+
 import { auth } from '@/lib/firebaseAdmin';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -6,33 +8,66 @@ export async function POST(req: NextRequest) {
     const { email, password } = await req.json();
 
     if (!email || !password) {
-      return NextResponse.json({ message: 'Email and password are required' }, { status: 400 });
+      return NextResponse.json(
+        { error: true, message: 'Email and password are required.' },
+        { status: 400 }
+      );
     }
 
     try {
-      // Create user in Firebase Authentication
-      const userRecord = await auth.createUser({
-        email: email,
-        password: password,
+      const userRecord = await auth.createUser({ email, password });
+
+      return NextResponse.json(
+        {
+          success: true,
+          uid: userRecord.uid,
+          message: 'User created successfully.',
+        },
+        { status: 201 }
+      );
+    } catch (err: unknown) {
+      const firebaseError = err as Error & { code?: string };
+
+      console.error('❌ Firebase signup error:', {
+        message: firebaseError.message,
+        code: firebaseError.code,
+        stack: firebaseError.stack,
       });
 
-      return NextResponse.json({ uid: userRecord.uid, message: 'User created successfully!' }, { status: 201 });
-    } catch (firebaseError: any) {
-      console.error('Firebase signup error:', firebaseError);
-
-      if (firebaseError.code === 'auth/email-already-exists') {
-        return NextResponse.json({ message: 'The email address is already in use by an existing user.' }, { status: 409 });
-      } else if (firebaseError.code === 'auth/invalid-email') {
-        return NextResponse.json({ message: 'The email address is not valid.' }, { status: 400 });
-      } else if (firebaseError.code === 'auth/weak-password') {
-        return NextResponse.json({ message: 'Password should be at least 6 characters.' }, { status: 400 });
-      } else {
-        return NextResponse.json({ message: 'An unexpected error occurred during signup.' }, { status: 500 });
+      switch (firebaseError.code) {
+        case 'auth/email-already-exists':
+          return NextResponse.json(
+            { error: true, message: 'The email address is already in use.' },
+            { status: 409 }
+          );
+        case 'auth/invalid-email':
+          return NextResponse.json(
+            { error: true, message: 'The email address is not valid.' },
+            { status: 400 }
+          );
+        case 'auth/weak-password':
+          return NextResponse.json(
+            { error: true, message: 'Password should be at least 6 characters.' },
+            { status: 400 }
+          );
+        default:
+          return NextResponse.json(
+            { error: true, message: 'Unexpected error during signup.' },
+            { status: 500 }
+          );
       }
     }
+  } catch (err: unknown) {
+    const error = err as Error;
 
-  } catch (error: any) {
-    console.error('Request parsing error:', error);
-    return NextResponse.json({ message: 'Invalid request body.' }, { status: 400 });
+    console.error('❌ Request parsing error:', {
+      message: error.message,
+      stack: error.stack,
+    });
+
+    return NextResponse.json(
+      { error: true, message: 'Invalid request body.' },
+      { status: 400 }
+    );
   }
 }
